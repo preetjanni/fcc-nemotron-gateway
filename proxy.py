@@ -34,6 +34,21 @@ HOP_HEADERS = {
     "te", "trailer", "transfer-encoding", "upgrade", "host",
 }
 
+# Headers the host's edge / the browser adds that would make FCC's
+# local-only Admin check fail. FCC allows Admin access only from the
+# local machine: it requires a loopback client, a loopback Host header,
+# and a loopback (or absent) Origin. The public edge adds X-Forwarded-*
+# with the real client IP, and a browser sends Origin: <public URL> —
+# both would trip the check even though the proxy itself connects from
+# 127.0.0.1. Stripping them makes the forwarded request look local,
+# which is correct here: this proxy's Basic Auth is the authentication
+# in front of FCC's local-only Admin UI.
+STRIP_HEADERS = {
+    "origin", "referer",
+    "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+    "x-forwarded-port", "x-forwarded-by", "forwarded",
+}
+
 
 def log(msg):
     print(f"[proxy {time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -90,7 +105,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else None
         headers = {
             k: v for k, v in self.headers.items()
-            if k.lower() not in HOP_HEADERS and k.lower() != "authorization"
+            if k.lower() not in HOP_HEADERS
+            and k.lower() not in STRIP_HEADERS
+            and k.lower() != "authorization"
         }
         conn = http.client.HTTPConnection(BACKEND_HOST, BACKEND_PORT, timeout=BACKEND_TIMEOUT)
         try:
